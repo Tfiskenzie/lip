@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vinyl Player</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0a0705;
+    --gold: #e0b46c;
+    --cream: #f2e8d8;
+    --muted: #8a8073;
+    --vinyl: #14100c;
+  }
+  *{ box-sizing:border-box; }
+
+  body{
+    margin:0;
+    min-height:100vh;
+    background: var(--bg);
+    font-family:'Space Grotesk', sans-serif;
+    color: var(--cream);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:22px;
+    padding: 40px 16px;
+  }
+
+  /* ---------- vinyl / cover disc ---------- */
+  .deck{
+    position:relative;
+    width: min(70vw, 340px);
+    aspect-ratio:1/1;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  .deck-glow{
+    position:absolute; inset:2%;
+    border-radius:50%;
+    background: radial-gradient(circle, rgba(217,169,89,0.35), transparent 68%);
+    filter: blur(16px);
+    opacity:0.55;
+    transition: opacity .4s ease;
+    pointer-events:none;
+  }
+  .deck.playing .deck-glow{ opacity:1; }
+
+  .vinyl{
+    position:relative;
+    width:100%; height:100%;
+    border-radius:50%;
+    background-color: var(--vinyl);
+    background-image: var(--cover-img, none);
+    background-size: cover;
+    background-position:center;
+    box-shadow:
+      0 16px 40px rgba(0,0,0,0.6),
+      inset 0 0 0 6px rgba(0,0,0,0.5),
+      inset 0 0 40px rgba(0,0,0,0.55),
+      0 0 0 1px rgba(255,255,255,0.04);
+    animation: spin 5s linear infinite;
+    animation-play-state: paused;
+  }
+  .deck.playing .vinyl{ animation-play-state: running; }
+  @keyframes spin{ to{ transform: rotate(360deg);} }
+
+  /* groove texture overlaid on top of the cover image */
+  .vinyl::before{
+    content:"";
+    position:absolute; inset:0;
+    border-radius:50%;
+    background: repeating-radial-gradient(circle at 50% 50%,
+      rgba(0,0,0,0) 0px, rgba(0,0,0,0) 3px,
+      rgba(0,0,0,0.28) 3.4px, rgba(255,255,255,0.05) 3.8px);
+    mix-blend-mode: multiply;
+    opacity:0.8;
+  }
+  .vinyl::after{
+    content:"";
+    position:absolute; inset:0;
+    border-radius:50%;
+    background: conic-gradient(from 0deg, rgba(255,255,255,0.08), transparent 15%, transparent 85%, rgba(255,255,255,0.08));
+    pointer-events:none;
+  }
+
+  .spindle{
+    position:absolute;
+    width:14px; height:14px;
+    border-radius:50%;
+    background: var(--bg);
+    box-shadow: 0 0 0 2px var(--gold), 0 0 8px rgba(217,169,89,0.6);
+    z-index:3;
+  }
+
+  .empty-hint{
+    position:relative;
+    z-index:3;
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color: var(--muted);
+    text-align:center;
+    padding:0 20%;
+    display:none;
+  }
+  .deck:not(.has-cover) .empty-hint{ display:block; }
+
+  /* ---------- track name ---------- */
+  .track-name{
+    font-weight:600;
+    font-size:16px;
+    letter-spacing:0.03em;
+    color: var(--cream);
+    text-align:center;
+    max-width: 320px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+
+  /* ---------- upload ---------- */
+  .upload-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    padding:9px 16px;
+    border-radius:20px;
+    border:1px dashed rgba(217,169,89,0.4);
+    color: var(--muted);
+    font-size:11px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    cursor:pointer;
+    transition: border-color .2s ease, color .2s ease, background .2s ease;
+  }
+  .upload-btn:hover{ border-color: var(--gold); color: var(--gold); background: rgba(217,169,89,0.06); }
+  .upload-btn svg{ width:14px; height:14px; }
+  .upload-btn input{ display:none; }
+</style>
+</head>
+<body>
+
+  <div class="deck" id="deck">
+    <div class="deck-glow"></div>
+    <div class="vinyl" id="vinyl">
+      <div class="spindle"></div>
+      <div class="empty-hint">No cover set —<br>edit COVER_SRC in the code</div>
+    </div>
+  </div>
+
+  <div class="track-name" id="trackName">No track loaded</div>
+
+  <label class="upload-btn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0-12 4 4m-4-4-4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+    Attach MP3
+    <input type="file" id="audioInput" accept="audio/*">
+  </label>
+
+  <audio id="audio"></audio>
+
+<script>
+(() => {
+  /* =========================================================
+     Set your album cover here — this image becomes the
+     spinning vinyl disc itself. Path, or any image URL.
+  ========================================================= */
+  const COVER_SRC = "assets/cover.jpg";
+
+  const deck = document.getElementById('deck');
+  const vinyl = document.getElementById('vinyl');
+  const trackName = document.getElementById('trackName');
+  const audioInput = document.getElementById('audioInput');
+  const audio = document.getElementById('audio');
+
+  if (COVER_SRC) {
+    const img = new Image();
+    img.onload = () => {
+      vinyl.style.setProperty('--cover-img', `url("${COVER_SRC}")`);
+      deck.classList.add('has-cover');
+    };
+    img.onerror = () => { deck.classList.remove('has-cover'); };
+    img.src = COVER_SRC;
+  }
+
+  audioInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    audio.src = URL.createObjectURL(file);
+    trackName.textContent = file.name.replace(/\.[^/.]+$/, '');
+    audio.play();
+  });
+
+  deck.addEventListener('click', () => {
+    if (!audio.src) return;
+    if (audio.paused) audio.play(); else audio.pause();
+  });
+
+  audio.addEventListener('play', () => deck.classList.add('playing'));
+  audio.addEventListener('pause', () => deck.classList.remove('playing'));
+  audio.addEventListener('ended', () => deck.classList.remove('playing'));
+})();
+</script>
+</body>
+</html>
