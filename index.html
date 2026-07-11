@@ -29,7 +29,7 @@
   }
 
   body{
-    min-height:90svh;
+    min-height:100svh;
     display:flex;
     align-items:center;
     justify-content:center;
@@ -45,7 +45,10 @@
     object-fit:cover;
     z-index:-2;
     background:#0a0512;
-    filter:brightness(0.85) saturate(1.1);
+    /* lighter dimming than before so a 4K/HD source keeps its detail
+       and sharpness instead of looking washed out or soft */
+    filter:brightness(0.92) saturate(1.05);
+    image-rendering:high-quality;
   }
 
   .bg-overlay{
@@ -377,7 +380,16 @@
 </head>
 <body>
 
-<video class="bg-video" autoplay muted loop playsinline preload="auto">
+<!--
+  Background video quality note:
+  The player itself never downscales this — .bg-video uses object-fit:cover
+  at 100% width/height, so it always plays at the source file's native
+  resolution. For a crisp, HD/4K look, upload a video that is ACTUALLY
+  encoded at 4K (3840x2160) or at least 1080p — swap the src below for
+  that file. A low-res source will still look soft no matter what CSS
+  says, since quality comes from the file itself, not the markup.
+-->
+<video class="bg-video" autoplay muted loop playsinline preload="auto" disablePictureInPicture disableRemotePlayback>
   <source src="v1.mp4" type="video/mp4">
 </video>
 <div class="bg-overlay"></div>
@@ -545,10 +557,13 @@ let glow = 0; // eases in/out with play state for a smooth pulsing glow
 let hueShift = 0; // slowly cycles the dot colour while playing
 const dotSeeds = Array.from({ length: DOT_COUNT }, () => 0.3 + Math.random() * 0.7);
 const dotPhases = Array.from({ length: DOT_COUNT }, () => Math.random() * Math.PI * 2);
-/* each dot has its own spring state so it bounces past its target
-   and settles back, instead of just smoothly tracking the level */
+/* each dot rides a straight-line ramp toward its target level, rising
+   and falling at a constant (linear) speed instead of bouncing past it
+   like a spring — a steady, metronomic "beat" feel rather than jelly. */
 const dotValue = Array.from({ length: DOT_COUNT }, () => 0);
-const dotVelocity = Array.from({ length: DOT_COUNT }, () => 0);
+const RISE_RATE = 0.14;  // max change per frame while climbing (attack)
+const FALL_RATE = 0.05;  // max change per frame while dropping (release)
+const IDLE_RATE = 0.03;  // gentler linear rate for the idle wobble
 
 function resizeWaveCanvas(){
   const dpr = window.devicePixelRatio || 1;
@@ -594,14 +609,17 @@ function drawWave(){
   const hue = 34 + Math.sin(hueShift * 0.02) * 14; // gentle amber-to-gold cycle
 
   for (let i = 0; i < DOT_COUNT; i++){
-    /* spring physics: each dot overshoots and bounces toward its
-       target level rather than sliding smoothly, for a livelier feel */
+    /* linear rise and fall: each dot steps toward its target level at a
+       constant speed (a straight ramp) rather than easing or springing,
+       so the bar climbs and drops on a steady, even beat */
     const target = Math.max(0.05, levels[i]);
-    const stiffness = isPlaying ? 0.35 : 0.12;
-    const damping = isPlaying ? 0.72 : 0.85;
-    dotVelocity[i] += (target - dotValue[i]) * stiffness;
-    dotVelocity[i] *= damping;
-    dotValue[i] += dotVelocity[i];
+    const diff = target - dotValue[i];
+    const rate = isPlaying ? (diff > 0 ? RISE_RATE : FALL_RATE) : IDLE_RATE;
+    if (Math.abs(diff) <= rate){
+      dotValue[i] = target;
+    } else {
+      dotValue[i] += rate * Math.sign(diff);
+    }
 
     const amp = dotValue[i] * (h * 0.42);
     const x = i * step;
