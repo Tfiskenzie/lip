@@ -134,32 +134,21 @@
     to{ transform:rotate(360deg); }
   }
 
-  /* the label IS the album cover — no separate floating square */
+  /* picture disc: art runs edge-to-edge, only the spindle hole sits on top */
   .label{
     position:absolute;
     top:50%; left:50%;
-    width:38%;
-    height:38%;
+    width:0;
+    height:0;
     transform:translate(-50%,-50%);
-    border-radius:50%;
-    overflow:hidden;
-    box-shadow:
-      0 0 0 3px var(--ink),
-      0 0 0 4px rgba(255,255,255,0.06),
-      inset 0 0 18px rgba(0,0,0,0.25);
-    background-size:cover;
-    background-position:center;
-    transition:background 0.5s ease;
     display:flex;
     align-items:center;
     justify-content:center;
   }
 
   .label .spindle{
-    width:9%;
-    height:9%;
-    min-width:8px;
-    min-height:8px;
+    width:14px;
+    height:14px;
     border-radius:50%;
     background:var(--ink);
     box-shadow:0 0 0 2px rgba(255,246,230,0.55);
@@ -329,7 +318,7 @@
     width:58px;
     height:58px;
     border-radius:50%;
-    background:var(--ink);
+    background:var(--cream);
     box-shadow:0 10px 22px -8px rgba(13,13,13,0.55);
     transition:transform .15s ease;
   }
@@ -386,8 +375,8 @@
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM20 6L9 12l11 6z"/></svg>
     </button>
     <button class="play-btn" id="playBtn" aria-label="Play">
-      <svg class="play-icon" viewBox="0 0 24 24" fill="var(--amber)"><path d="M8 5v14l12-7z"/></svg>
-      <svg class="pause-icon" viewBox="0 0 24 24" fill="var(--amber)"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+      <svg class="play-icon" viewBox="0 0 24 24" fill="var(--ink)"><path d="M8 5v14l12-7z"/></svg>
+      <svg class="pause-icon" viewBox="0 0 24 24" fill="var(--ink)"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
     </button>
     <button class="skip-btn" id="nextBtn" aria-label="Next track">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM4 6l11 6-11 6z"/></svg>
