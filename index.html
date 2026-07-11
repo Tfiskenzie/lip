@@ -353,29 +353,6 @@
     .tonearm{ transition:none; }
   }
 
-  /* ---------- waveform ---------- */
-
-  .waveform{
-    width:100%;
-    max-width:340px;
-    height:88px;
-    margin:0 0 24px;
-    display:block;
-    position:relative;
-  }
-
-  #waveCanvas{
-    width:100%;
-    height:100%;
-    display:block;
-    position:relative;
-    z-index:1;
-    transition:filter 0.6s ease;
-    filter:drop-shadow(0 0 0 rgba(255,189,89,0));
-  }
-  .player.is-playing #waveCanvas{
-    filter:drop-shadow(0 0 10px rgba(255,189,89,0.65)) drop-shadow(0 0 22px rgba(242,169,59,0.35));
-  }
 </style>
 </head>
 <body>
@@ -411,10 +388,6 @@
       <div class="pivot"></div>
       <div class="arm"><div class="headshell"></div></div>
     </div>
-  </div>
-
-  <div class="waveform">
-    <canvas id="waveCanvas"></canvas>
   </div>
 
   <div class="meta">
@@ -486,8 +459,6 @@ function play(){
   isPlaying = true;
   player.classList.add('is-playing');
   playBtn.setAttribute('aria-label', 'Pause');
-  ensureAudioContext();
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   audio.play().catch(() => {});
 }
 
@@ -524,150 +495,6 @@ bar.addEventListener('pointerdown', e => { scrubbing = true; scrubTo(e.clientX);
 window.addEventListener('pointermove', e => { if (scrubbing) scrubTo(e.clientX); });
 window.addEventListener('pointerup', () => scrubbing = false);
 
-/* -----------------------------------------------------------
-   waveform visualizer — Web Audio API analyser drawn to canvas.
-   Falls back to a gentle idle pulse when paused or before the
-   AudioContext has been created (browsers require a user
-   gesture, so it's created lazily on first play).
------------------------------------------------------------- */
-let audioCtx, analyser, sourceNode, dataArray, bufferLength;
-
-function ensureAudioContext(){
-  if (audioCtx) return;
-  try{
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 128;
-    analyser.smoothingTimeConstant = 0.82;
-    bufferLength = analyser.frequencyBinCount;
-    dataArray = new Uint8Array(bufferLength);
-    sourceNode = audioCtx.createMediaElementSource(audio);
-    sourceNode.connect(analyser);
-    analyser.connect(audioCtx.destination);
-  }catch(e){
-    audioCtx = null; analyser = null;
-  }
-}
-
-const waveCanvas = document.getElementById('waveCanvas');
-const waveCtx = waveCanvas.getContext('2d');
-/* classic solid-bar equalizer: a fixed row of bars sitting on a shared
-   baseline, each one a solid rounded rectangle rising straight up. */
-const BAR_COUNT = 20;
-const BAR_GAP_RATIO = 0.38;  // gap width as a fraction of each bar's slot
-let idlePhase = 0;
-let glow = 0; // eases in/out with play state for a smooth pulsing glow
-let hueShift = 0; // slowly cycles the bar colour while playing
-const barSeeds = Array.from({ length: BAR_COUNT }, () => 0.3 + Math.random() * 0.7);
-const barPhases = Array.from({ length: BAR_COUNT }, () => Math.random() * Math.PI * 2);
-/* each bar rides a straight-line ramp toward its target level, rising
-   and falling at a constant (linear) speed instead of easing or
-   bouncing — a steady, metronomic "beat" feel. */
-const barValue = Array.from({ length: BAR_COUNT }, () => 0);
-const RISE_RATE = 0.16;  // max change per frame while climbing (attack)
-const FALL_RATE = 0.06;  // max change per frame while dropping (release)
-const IDLE_RATE = 0.03;  // gentler linear rate for the idle wobble
-const MIN_LEVEL = 0.06;  // every bar keeps a visible sliver even when quiet
-
-function resizeWaveCanvas(){
-  const dpr = window.devicePixelRatio || 1;
-  const rect = waveCanvas.getBoundingClientRect();
-  waveCanvas.width = Math.max(1, rect.width * dpr);
-  waveCanvas.height = Math.max(1, rect.height * dpr);
-  waveCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-window.addEventListener('resize', resizeWaveCanvas);
-resizeWaveCanvas();
-
-function drawRoundedTopBar(ctx, x, baseY, width, height, radius){
-  const r = Math.min(radius, width / 2, height);
-  const top = baseY - height;
-  ctx.beginPath();
-  ctx.moveTo(x, baseY);
-  ctx.lineTo(x, top + r);
-  ctx.arcTo(x, top, x + r, top, r);
-  ctx.lineTo(x + width - r, top);
-  ctx.arcTo(x + width, top, x + width, top + r, r);
-  ctx.lineTo(x + width, baseY);
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawWave(){
-  requestAnimationFrame(drawWave);
-  const rect = waveCanvas.getBoundingClientRect();
-  const w = rect.width, h = rect.height;
-  if (!w || !h) return;
-  waveCtx.clearRect(0, 0, w, h);
-
-  const baseY = h - 2;         // baseline the bars grow up from
-  const maxBarHeight = h - 6;  // leave a little headroom at the top
-  const levels = [];
-
-  if (isPlaying && analyser){
-    analyser.getByteFrequencyData(dataArray);
-    for (let i = 0; i < BAR_COUNT; i++){
-      const idx = Math.floor((i / BAR_COUNT) * bufferLength * 0.85);
-      levels.push(dataArray[idx] / 255);
-    }
-  } else {
-    idlePhase += 0.02;
-    for (let i = 0; i < BAR_COUNT; i++){
-      const wobble = 0.5 + 0.5 * Math.sin(idlePhase * 1.1 + barPhases[i]);
-      levels.push(0.06 + barSeeds[i] * 0.18 * wobble);
-    }
-  }
-
-  /* ease the glow amount toward its target so it ramps up/down
-     smoothly whenever playback starts or stops */
-  const targetGlow = isPlaying ? 1 : 0;
-  glow += (targetGlow - glow) * 0.06;
-  if (isPlaying) hueShift += 0.6;
-
-  const slot = w / BAR_COUNT;
-  const barWidth = slot * (1 - BAR_GAP_RATIO);
-  const radius = 3 + glow * 1.5;
-  const hue = 34 + Math.sin(hueShift * 0.02) * 14; // gentle amber-to-gold cycle
-
-  waveCtx.shadowColor = `hsla(${hue}, 100%, 65%, 0.85)`;
-  waveCtx.shadowBlur = 3 + glow * 10;
-
-  for (let i = 0; i < BAR_COUNT; i++){
-    /* linear rise and fall: each bar steps toward its target level at a
-       constant speed (a straight ramp) rather than easing or springing,
-       so it climbs and drops on a steady, even beat */
-    const target = Math.max(MIN_LEVEL, levels[i]);
-    const diff = target - barValue[i];
-    const rate = isPlaying ? (diff > 0 ? RISE_RATE : FALL_RATE) : IDLE_RATE;
-    if (Math.abs(diff) <= rate){
-      barValue[i] = target;
-    } else {
-      barValue[i] += rate * Math.sign(diff);
-    }
-
-    const barHeight = Math.max(4, barValue[i] * maxBarHeight);
-    const x = i * slot + (slot - barWidth) / 2;
-
-    const grad = waveCtx.createLinearGradient(0, baseY - barHeight, 0, baseY);
-    grad.addColorStop(0, `hsla(${hue}, 100%, 74%, 1)`);
-    grad.addColorStop(1, `hsla(${hue - 14}, 90%, 46%, 0.95)`);
-    waveCtx.fillStyle = grad;
-
-    drawRoundedTopBar(waveCtx, x, baseY, barWidth, barHeight, radius);
-  }
-
-  /* thin baseline the whole row sits on */
-  waveCtx.shadowBlur = 0;
-  waveCtx.globalAlpha = 0.25;
-  waveCtx.strokeStyle = 'rgba(255,246,230,0.4)';
-  waveCtx.lineWidth = 1;
-  waveCtx.beginPath();
-  waveCtx.moveTo(0, baseY + 0.5);
-  waveCtx.lineTo(w, baseY + 0.5);
-  waveCtx.stroke();
-  waveCtx.globalAlpha = 1;
-}
-drawWave();
 
 </script>
 
