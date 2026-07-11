@@ -67,10 +67,10 @@
   /* ---------- header ---------- */
 
   .logo{
-    width:min(48%, 170px);
+    width:min(34%, 120px);
     height:auto;
     display:block;
-    margin:0 auto 10px;
+    margin:0 auto 8px;
   }
 
   .eyebrow{
@@ -378,7 +378,7 @@
 <body>
 
 <video class="bg-video" autoplay muted loop playsinline preload="auto">
-  <source src="h5.mp4" type="video/mp4">
+  <source src="hj.mp4" type="video/mp4">
 </video>
 <div class="bg-overlay"></div>
 
@@ -539,11 +539,16 @@ function ensureAudioContext(){
 
 const waveCanvas = document.getElementById('waveCanvas');
 const waveCtx = waveCanvas.getContext('2d');
-const POINT_COUNT = 64;
+const DOT_COUNT = 26;
 let idlePhase = 0;
 let glow = 0; // eases in/out with play state for a smooth pulsing glow
-const pointSeeds = Array.from({ length: POINT_COUNT }, () => 0.3 + Math.random() * 0.7);
-const pointPhases = Array.from({ length: POINT_COUNT }, () => Math.random() * Math.PI * 2);
+let hueShift = 0; // slowly cycles the dot colour while playing
+const dotSeeds = Array.from({ length: DOT_COUNT }, () => 0.3 + Math.random() * 0.7);
+const dotPhases = Array.from({ length: DOT_COUNT }, () => Math.random() * Math.PI * 2);
+/* each dot has its own spring state so it bounces past its target
+   and settles back, instead of just smoothly tracking the level */
+const dotValue = Array.from({ length: DOT_COUNT }, () => 0);
+const dotVelocity = Array.from({ length: DOT_COUNT }, () => 0);
 
 function resizeWaveCanvas(){
   const dpr = window.devicePixelRatio || 1;
@@ -554,26 +559,6 @@ function resizeWaveCanvas(){
 }
 window.addEventListener('resize', resizeWaveCanvas);
 resizeWaveCanvas();
-
-/* Draws a single smooth, continuous waveform line through a set of
-   amplitude points using quadratic curves between midpoints, which
-   reads as a fluid, linear waveform rather than static bars. */
-function drawLine(points, w, h, midY){
-  const step = w / (points.length - 1);
-  waveCtx.beginPath();
-  waveCtx.moveTo(0, midY - points[0] * h);
-  for (let i = 0; i < points.length - 1; i++){
-    const x0 = i * step;
-    const y0 = midY - points[i] * h;
-    const x1 = (i + 1) * step;
-    const y1 = midY - points[i + 1] * h;
-    const mx = (x0 + x1) / 2;
-    const my = (y0 + y1) / 2;
-    waveCtx.quadraticCurveTo(x0, y0, mx, my);
-  }
-  waveCtx.lineTo(w, midY - points[points.length - 1] * h);
-  waveCtx.stroke();
-}
 
 function drawWave(){
   requestAnimationFrame(drawWave);
@@ -587,15 +572,15 @@ function drawWave(){
 
   if (isPlaying && analyser){
     analyser.getByteFrequencyData(dataArray);
-    for (let i = 0; i < POINT_COUNT; i++){
-      const idx = Math.floor((i / POINT_COUNT) * bufferLength * 0.85);
+    for (let i = 0; i < DOT_COUNT; i++){
+      const idx = Math.floor((i / DOT_COUNT) * bufferLength * 0.85);
       levels.push(dataArray[idx] / 255);
     }
   } else {
-    idlePhase += 0.025;
-    for (let i = 0; i < POINT_COUNT; i++){
-      const wobble = 0.5 + 0.5 * Math.sin(idlePhase * 1.3 + pointPhases[i]);
-      levels.push(0.08 + pointSeeds[i] * 0.22 * wobble);
+    idlePhase += 0.02;
+    for (let i = 0; i < DOT_COUNT; i++){
+      const wobble = 0.5 + 0.5 * Math.sin(idlePhase * 1.1 + dotPhases[i]);
+      levels.push(0.06 + dotSeeds[i] * 0.18 * wobble);
     }
   }
 
@@ -603,28 +588,53 @@ function drawWave(){
      smoothly whenever playback starts or stops */
   const targetGlow = isPlaying ? 1 : 0;
   glow += (targetGlow - glow) * 0.06;
+  if (isPlaying) hueShift += 0.6;
 
-  const grad = waveCtx.createLinearGradient(0, 0, w, 0);
-  grad.addColorStop(0, 'rgba(255,189,89,0.15)');
-  grad.addColorStop(0.5, '#FFBD59');
-  grad.addColorStop(1, 'rgba(255,189,89,0.15)');
+  const step = w / (DOT_COUNT - 1);
+  const hue = 34 + Math.sin(hueShift * 0.02) * 14; // gentle amber-to-gold cycle
 
-  waveCtx.lineJoin = 'round';
-  waveCtx.lineCap = 'round';
-  waveCtx.strokeStyle = grad;
-  waveCtx.shadowColor = 'rgba(255,189,89,0.85)';
-  waveCtx.shadowBlur = 3 + glow * 14;
+  for (let i = 0; i < DOT_COUNT; i++){
+    /* spring physics: each dot overshoots and bounces toward its
+       target level rather than sliding smoothly, for a livelier feel */
+    const target = Math.max(0.05, levels[i]);
+    const stiffness = isPlaying ? 0.35 : 0.12;
+    const damping = isPlaying ? 0.72 : 0.85;
+    dotVelocity[i] += (target - dotValue[i]) * stiffness;
+    dotVelocity[i] *= damping;
+    dotValue[i] += dotVelocity[i];
 
-  /* main waveform line */
-  waveCtx.lineWidth = 2.5;
-  drawLine(levels, w, h * 0.92, midY);
+    const amp = dotValue[i] * (h * 0.42);
+    const x = i * step;
+    const topY = midY - amp;
+    const botY = midY + amp;
+    const radius = 2.2 + glow * 1.4;
 
-  /* soft mirrored reflection beneath, for a fuller "audio wave" feel */
-  waveCtx.globalAlpha = 0.35;
-  waveCtx.lineWidth = 1.5;
-  const mirrored = levels.map(v => -v * 0.6);
-  drawLine(mirrored, w, h * 0.92, midY);
-  waveCtx.globalAlpha = 1;
+    const grad = waveCtx.createLinearGradient(0, topY, 0, botY);
+    grad.addColorStop(0, `hsla(${hue}, 95%, 68%, 0.95)`);
+    grad.addColorStop(0.5, `hsla(${hue - 10}, 20%, 10%, 0.9)`);
+    grad.addColorStop(1, `hsla(${hue}, 95%, 68%, 0.95)`);
+
+    waveCtx.strokeStyle = grad;
+    waveCtx.lineWidth = 3;
+    waveCtx.lineCap = 'round';
+    waveCtx.shadowColor = `hsla(${hue}, 100%, 65%, 0.9)`;
+    waveCtx.shadowBlur = 4 + glow * 12;
+
+    /* the connecting capsule between the two dots */
+    waveCtx.beginPath();
+    waveCtx.moveTo(x, topY);
+    waveCtx.lineTo(x, botY);
+    waveCtx.stroke();
+
+    /* glowing dot caps, pulsing slightly larger while playing */
+    waveCtx.fillStyle = `hsla(${hue}, 100%, 72%, 1)`;
+    waveCtx.beginPath();
+    waveCtx.arc(x, topY, radius, 0, Math.PI * 2);
+    waveCtx.fill();
+    waveCtx.beginPath();
+    waveCtx.arc(x, botY, radius, 0, Math.PI * 2);
+    waveCtx.fill();
+  }
 
   /* thin centre baseline */
   waveCtx.shadowBlur = 0;
