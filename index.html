@@ -100,16 +100,22 @@
     position:absolute;
     inset:0;
     border-radius:50%;
-    background:
-      repeating-radial-gradient(circle at 50% 50%,
-        #151310 0px, #151310 2px,
-        #0a0908 3px, #0a0908 4px
-      );
+    overflow:hidden;
     box-shadow:
       0 22px 40px -14px rgba(13,13,13,0.55),
       inset 0 0 0 1px rgba(255,255,255,0.04);
     animation: spin 5.5s linear infinite;
     animation-play-state: paused;
+  }
+
+  .disc-img{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    background:var(--ink);
+    display:block;
   }
 
   .disc::before{
@@ -349,6 +355,7 @@
 
   <div class="turntable">
     <div class="disc" id="disc">
+      <img class="disc-img" id="discImage" src="vinyl-disc.jpg" alt="Vinyl record">
       <div class="label" id="label">
         <div class="spindle"></div>
       </div>
@@ -389,50 +396,19 @@
 
 </div>
 
-<audio id="audio" preload="metadata"></audio>
+<audio id="audio" src="track.mp3" preload="metadata"></audio>
 
 <script>
 /* -----------------------------------------------------------
-   PLAYLIST
-   Each track's "cover" doubles as the vinyl label — there is
-   no separate album-art element. Swap `cover` for a real image
-   URL or a base64 data URI, and `src` for a real audio file
-   (base64 data URI works great for a self-contained build)
-   and everything else just works.
+   Vinyl image and audio are set directly on their tags above:
+     <img id="discImage" src="vinyl-disc.jpg">
+     <audio id="audio" src="track.mp3">
+   Point those two src attributes at your own files — everything
+   below just plays/pauses and tracks progress against them.
 ------------------------------------------------------------ */
-const tracks = [
-  {
-    title: "Midnight Frequency",
-    artist: "Unknown Artist",
-    duration: 214, // seconds — used until real audio metadata loads
-    cover: "",
-    src: ""
-  },
-  {
-    title: "Static & Gold",
-    artist: "Unknown Artist",
-    duration: 187,
-    cover: "repeating-linear-gradient(45deg, #FFBD59 0 10px, #F2A93B 10px 20px)",
-    src: ""
-  },
-  {
-    title: "Runout Groove",
-    artist: "Unknown Artist",
-    duration: 251,
-    cover: "radial-gradient(circle at 35% 35%, #F2A93B, #1c1a17 75%)",
-    src: ""
-  }
-];
-
-let current = 0;
 let isPlaying = false;
-let fakeTimer = null;
-let fakeElapsed = 0;
 
 const player = document.getElementById('player');
-const label = document.getElementById('label');
-const trackTitle = document.getElementById('trackTitle');
-const trackArtist = document.getElementById('trackArtist');
 const curTimeEl = document.getElementById('curTime');
 const durTimeEl = document.getElementById('durTime');
 const fill = document.getElementById('fill');
@@ -442,78 +418,10 @@ const audio = document.getElementById('audio');
 const playBtn = document.getElementById('playBtn');
 
 function formatTime(s){
-  s = Math.max(0, Math.floor(s));
+  s = Math.max(0, Math.floor(s || 0));
   const m = Math.floor(s / 60);
   const sec = String(s % 60).padStart(2, '0');
   return `${m}:${sec}`;
-}
-
-function loadTrack(i, autoplay){
-  stopFakeTimer();
-  current = (i + tracks.length) % tracks.length;
-  const t = tracks[current];
-
-  trackTitle.textContent = t.title;
-  trackArtist.textContent = t.artist;
-  label.style.background = t.cover;
-  durTimeEl.textContent = formatTime(t.duration);
-  curTimeEl.textContent = "0:00";
-  fill.style.width = "0%";
-  knob.style.left = "0%";
-  fakeElapsed = 0;
-
-  if (t.src){
-    audio.src = t.src;
-    audio.load();
-  } else {
-    audio.removeAttribute('src');
-    audio.load();
-  }
-
-  if (autoplay) play();
-}
-
-function play(){
-  isPlaying = true;
-  player.classList.add('is-playing');
-  playBtn.setAttribute('aria-label', 'Pause');
-
-  const t = tracks[current];
-  if (t.src){
-    audio.play().catch(() => startFakeTimer());
-  } else {
-    startFakeTimer();
-  }
-}
-
-function pause(){
-  isPlaying = false;
-  player.classList.remove('is-playing');
-  playBtn.setAttribute('aria-label', 'Play');
-  audio.pause();
-  stopFakeTimer();
-}
-
-function togglePlay(){
-  isPlaying ? pause() : play();
-}
-
-/* demo progress for when no real audio source is set */
-function startFakeTimer(){
-  stopFakeTimer();
-  fakeTimer = setInterval(() => {
-    fakeElapsed += 0.25;
-    const dur = tracks[current].duration;
-    if (fakeElapsed >= dur){
-      nextTrack();
-      return;
-    }
-    updateProgress(fakeElapsed, dur);
-  }, 250);
-}
-function stopFakeTimer(){
-  if (fakeTimer) clearInterval(fakeTimer);
-  fakeTimer = null;
 }
 
 function updateProgress(pos, dur){
@@ -523,43 +431,45 @@ function updateProgress(pos, dur){
   curTimeEl.textContent = formatTime(pos);
 }
 
-function nextTrack(){ loadTrack(current + 1, isPlaying); }
-function prevTrack(){ loadTrack(current - 1, isPlaying); }
+function play(){
+  isPlaying = true;
+  player.classList.add('is-playing');
+  playBtn.setAttribute('aria-label', 'Pause');
+  audio.play().catch(() => {});
+}
 
-/* real <audio> element wiring, used automatically once a track has a src */
-audio.addEventListener('timeupdate', () => {
-  if (!tracks[current].src) return;
-  updateProgress(audio.currentTime, audio.duration || tracks[current].duration);
-});
-audio.addEventListener('loadedmetadata', () => {
-  if (!tracks[current].src) return;
-  durTimeEl.textContent = formatTime(audio.duration);
-});
-audio.addEventListener('ended', nextTrack);
+function pause(){
+  isPlaying = false;
+  player.classList.remove('is-playing');
+  playBtn.setAttribute('aria-label', 'Play');
+  audio.pause();
+}
+
+function togglePlay(){
+  isPlaying ? pause() : play();
+}
+
+audio.addEventListener('timeupdate', () => updateProgress(audio.currentTime, audio.duration));
+audio.addEventListener('loadedmetadata', () => { durTimeEl.textContent = formatTime(audio.duration); });
+audio.addEventListener('ended', pause);
 
 playBtn.addEventListener('click', togglePlay);
-document.getElementById('nextBtn').addEventListener('click', () => nextTrack());
-document.getElementById('prevBtn').addEventListener('click', () => prevTrack());
+document.getElementById('nextBtn').addEventListener('click', () => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 10); });
+document.getElementById('prevBtn').addEventListener('click', () => { audio.currentTime = Math.max(0, audio.currentTime - 10); });
 
 /* scrub */
 function scrubTo(clientX){
   const rect = bar.getBoundingClientRect();
   const pct = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-  const dur = tracks[current].src ? (audio.duration || tracks[current].duration) : tracks[current].duration;
+  const dur = audio.duration || 0;
   const pos = pct * dur;
-  if (tracks[current].src){
-    audio.currentTime = pos;
-  } else {
-    fakeElapsed = pos;
-  }
+  audio.currentTime = pos;
   updateProgress(pos, dur);
 }
 let scrubbing = false;
 bar.addEventListener('pointerdown', e => { scrubbing = true; scrubTo(e.clientX); });
 window.addEventListener('pointermove', e => { if (scrubbing) scrubTo(e.clientX); });
 window.addEventListener('pointerup', () => scrubbing = false);
-
-loadTrack(0, false);
 </script>
 
 </body>
