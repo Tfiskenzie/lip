@@ -91,9 +91,9 @@
   .turntable{
     position:relative;
     width:100%;
-    max-width:340px;
+    max-width:230px;
     aspect-ratio:1/1;
-    margin-bottom:8px;
+    margin-bottom:22px;
   }
 
   .disc{
@@ -333,6 +333,25 @@
     .disc{ animation:none !important; }
     .tonearm{ transition:none; }
   }
+
+  /* ---------- waveform ---------- */
+
+  .waveform{
+    width:100%;
+    max-width:300px;
+    height:88px;
+    margin:0 0 24px;
+    display:block;
+    position:relative;
+  }
+
+  #waveCanvas{
+    width:100%;
+    height:100%;
+    display:block;
+    position:relative;
+    z-index:1;
+  }
 </style>
 </head>
 <body>
@@ -353,6 +372,10 @@
       <div class="pivot"></div>
       <div class="arm"><div class="headshell"></div></div>
     </div>
+  </div>
+
+  <div class="waveform">
+    <canvas id="waveCanvas"></canvas>
   </div>
 
   <div class="meta">
@@ -424,6 +447,8 @@ function play(){
   isPlaying = true;
   player.classList.add('is-playing');
   playBtn.setAttribute('aria-label', 'Pause');
+  ensureAudioContext();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   audio.play().catch(() => {});
 }
 
@@ -459,6 +484,105 @@ let scrubbing = false;
 bar.addEventListener('pointerdown', e => { scrubbing = true; scrubTo(e.clientX); });
 window.addEventListener('pointermove', e => { if (scrubbing) scrubTo(e.clientX); });
 window.addEventListener('pointerup', () => scrubbing = false);
+
+/* -----------------------------------------------------------
+   waveform visualizer — Web Audio API analyser drawn to canvas.
+   Falls back to a gentle idle pulse when paused or before the
+   AudioContext has been created (browsers require a user
+   gesture, so it's created lazily on first play).
+------------------------------------------------------------ */
+let audioCtx, analyser, sourceNode, dataArray, bufferLength;
+
+function ensureAudioContext(){
+  if (audioCtx) return;
+  try{
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 128;
+    analyser.smoothingTimeConstant = 0.82;
+    bufferLength = analyser.frequencyBinCount;
+    dataArray = new Uint8Array(bufferLength);
+    sourceNode = audioCtx.createMediaElementSource(audio);
+    sourceNode.connect(analyser);
+    analyser.connect(audioCtx.destination);
+  }catch(e){
+    audioCtx = null; analyser = null;
+  }
+}
+
+const waveCanvas = document.getElementById('waveCanvas');
+const waveCtx = waveCanvas.getContext('2d');
+const BAR_COUNT = 40;
+let idlePhase = 0;
+const barSeeds = Array.from({ length: BAR_COUNT }, () => 0.35 + Math.random() * 0.65);
+const barPhases = Array.from({ length: BAR_COUNT }, () => Math.random() * Math.PI * 2);
+
+function resizeWaveCanvas(){
+  const dpr = window.devicePixelRatio || 1;
+  const rect = waveCanvas.getBoundingClientRect();
+  waveCanvas.width = Math.max(1, rect.width * dpr);
+  waveCanvas.height = Math.max(1, rect.height * dpr);
+  waveCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resizeWaveCanvas);
+resizeWaveCanvas();
+
+function roundRect(c, x, y, w, h, r){
+  const rr = Math.min(r, w / 2, h / 2);
+  c.beginPath();
+  c.moveTo(x + rr, y);
+  c.arcTo(x + w, y, x + w, y + h, rr);
+  c.arcTo(x + w, y + h, x, y + h, rr);
+  c.arcTo(x, y + h, x, y, rr);
+  c.arcTo(x, y, x + w, y, rr);
+  c.closePath();
+}
+
+function drawWave(){
+  requestAnimationFrame(drawWave);
+  const rect = waveCanvas.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (!w || !h) return;
+  waveCtx.clearRect(0, 0, w, h);
+
+  const gap = 3;
+  const barWidth = (w - gap * (BAR_COUNT - 1)) / BAR_COUNT;
+  const midY = h / 2;
+  const levels = [];
+
+  if (isPlaying && analyser){
+    analyser.getByteFrequencyData(dataArray);
+    for (let i = 0; i < BAR_COUNT; i++){
+      const idx = Math.floor((i / BAR_COUNT) * bufferLength * 0.85);
+      levels.push(dataArray[idx] / 255);
+    }
+  } else {
+    idlePhase += 0.03;
+    for (let i = 0; i < BAR_COUNT; i++){
+      const wobble = 0.5 + 0.5 * Math.sin(idlePhase * 1.4 + barPhases[i]);
+      levels.push(0.1 + barSeeds[i] * 0.55 * wobble);
+    }
+  }
+
+  waveCtx.shadowColor = 'rgba(242,169,59,0.55)';
+  waveCtx.shadowBlur = 8;
+
+  for (let i = 0; i < BAR_COUNT; i++){
+    const level = Math.max(0.06, levels[i]);
+    const barHeight = level * (h * 0.94);
+    const x = i * (barWidth + gap);
+    const grad = waveCtx.createLinearGradient(0, midY - barHeight / 2, 0, midY + barHeight / 2);
+    grad.addColorStop(0, '#FFBD59');
+    grad.addColorStop(0.5, '#0D0D0D');
+    grad.addColorStop(1, '#FFBD59');
+    waveCtx.fillStyle = grad;
+    roundRect(waveCtx, x, midY - barHeight / 2, barWidth, barHeight, barWidth / 2);
+    waveCtx.fill();
+  }
+  waveCtx.shadowBlur = 0;
+}
+drawWave();
+
 </script>
 
 </body>
